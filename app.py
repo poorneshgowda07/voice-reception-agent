@@ -49,11 +49,17 @@ st.markdown('<p class="main-title">📞 Voice &amp; Agentic Reception Agent</p>'
 st.caption("Upload a call recording → auto-transcribe → extract caller info → store in database")
 st.divider()
 
-# ── API Key warning (never display the key itself) ─────────────────────────────────────────────────────────────────
-if not os.getenv("SARVAM_API_KEY", "").strip():
+# ── API Key warning (never display the key itself) ─────────────────────────────
+_has_key = bool(os.getenv("SARVAM_API_KEY", "").strip())
+if not _has_key:
+    try:
+        _has_key = bool(st.secrets.get("SARVAM_API_KEY", "").strip())
+    except Exception:
+        pass
+if not _has_key:
     st.warning(
         "**SARVAM_API_KEY not found.** "
-        "Create a `.env` file in the project root with `SARVAM_API_KEY=your_key_here` "
+        "Add it to your `.env` file (local) or Streamlit Secrets (cloud) "
         "then restart the app."
     )
 

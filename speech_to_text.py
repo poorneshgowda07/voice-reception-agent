@@ -28,10 +28,17 @@ def transcribe_audio(audio_path: str) -> Tuple[str, Optional[str]]:
         On failure: ("", human-readable error string)
     """
     api_key = os.getenv("SARVAM_API_KEY", "").strip()
+    # Fallback: Streamlit Cloud stores secrets in st.secrets, not .env
+    if not api_key:
+        try:
+            import streamlit as st
+            api_key = st.secrets.get("SARVAM_API_KEY", "").strip()
+        except Exception:
+            pass
     if not api_key:
         return "", (
             "[ERROR] SARVAM_API_KEY is not set. "
-            "Add SARVAM_API_KEY=<your_key> to your .env file."
+            "Add SARVAM_API_KEY=<your_key> to your .env file or Streamlit secrets."
         )
 
     audio_path = Path(audio_path)

@@ -1,6 +1,8 @@
-# 📞 Voice & Agentic Reception Agent
+# Voice & Agentic Reception Agent
 
 An MVP that transcribes call recordings, extracts structured caller info using an LLM, stores everything in SQLite, and presents it in a Streamlit dashboard.
+
+**Live App:** [voice-reception-agent.streamlit.app](https://voice-reception-agent.streamlit.app)
 
 ---
 
@@ -8,78 +10,71 @@ An MVP that transcribes call recordings, extracts structured caller info using a
 
 | Layer | Technology |
 |---|---|
-| Speech-to-Text | OpenAI Whisper API (`whisper-1`) |
-| LLM Extraction | OpenAI GPT-4o-mini |
-| Sample Audio Gen | pyttsx3 (Windows SAPI5, fully offline) |
+| Speech-to-Text | Sarvam AI `saaras:v3` STT API |
+| LLM Extraction | Sarvam AI `sarvam-105b` Chat API |
+| Sample Audio Gen | pyttsx3 (Windows SAPI5, offline) |
 | Database | SQLite via Python `sqlite3` stdlib |
 | UI | Streamlit |
 
-> **Why Whisper API instead of local whisper?**  
-> `ffmpeg` is not installed on the target machine (required by local `openai-whisper` for audio decoding). The Whisper API achieves identical quality with only the `openai` pip package and zero system dependencies.
-
 ---
 
-## Setup
+## Quick Start (Local)
 
-### 1. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure your API key
-```bash
-copy .env.example .env
+Create a `.env` file:
 ```
-Edit `.env` and replace `your_api_key_here` with your real OpenAI API key.
-
-```
-OPENAI_API_KEY=sk-...
+SARVAM_API_KEY=sk_your_key_here
 ```
 
-### 3. Generate sample audio files (one-time)
-```bash
-python generate_audio.py
-```
-This creates `audio/rahul_call.wav`, `audio/priya_call.wav`, `audio/arjun_call.wav` using offline Windows TTS.
-
-### 4. Run the app
+Run:
 ```bash
 streamlit run app.py
 ```
-Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 ---
 
-## Demo Sequence
+## Cloud Deployment (Streamlit Community Cloud)
 
-1. Run `python generate_audio.py` to create sample audio files.
-2. Launch: `streamlit run app.py`
-3. Upload `audio/rahul_call.wav` → click **Process Call** → verify transcript & extracted fields.
-4. Repeat for `priya_call.wav` (no callback number expected) and `arjun_call.wav`.
-5. Scroll down to see the **All Stored Calls** table with expandable transcripts.
-6. Restart the app (`Ctrl+C` → `streamlit run app.py`) — records persist in `calls.db`.
-7. Run SQL queries: `sqlite3 calls.db ".read sql/queries.sql"`
+1. Fork/push this repo to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io) and deploy the repo
+3. In the app settings, add `SARVAM_API_KEY` under **Secrets**:
+   ```toml
+   SARVAM_API_KEY = "sk_your_key_here"
+   ```
+4. The app will be live at `https://your-app.streamlit.app`
+
+---
+
+## Sample Audio Files
+
+3 pre-generated WAV files in `audio/`:
+
+| File | Caller | Intent | Callback |
+|---|---|---|---|
+| `rahul_call.wav` | Rahul | Course inquiry | 9876543210 |
+| `priya_call.wav` | Priya | Technical support | (none) |
+| `arjun_call.wav` | Arjun | Product demo | 9123456789 |
+
+Generate fresh copies (Windows only): `python generate_audio.py`
 
 ---
 
 ## Project Structure
 
 ```
-├── audio/                  # Generated sample WAV files
-│   ├── rahul_call.wav
-│   ├── priya_call.wav
-│   └── arjun_call.wav
-├── sql/
-│   └── queries.sql         # SELECT *, column-subset, COUNT(*)
 ├── app.py                  # Streamlit UI
+├── speech_to_text.py       # Sarvam STT transcription
+├── agent.py                # Sarvam LLM JSON extraction
 ├── database.py             # SQLite schema + CRUD
-├── speech_to_text.py       # Whisper API transcription
-├── agent.py                # GPT-4o-mini JSON extraction
 ├── generate_audio.py       # Offline TTS sample generator
-├── calls.db                # SQLite database (auto-created)
+├── pipeline_test.py        # End-to-end CLI test
+├── audio/                  # Sample WAV files
+├── sql/queries.sql         # Reference SQL queries
 ├── requirements.txt
 ├── .env.example
-├── .env                    # ← YOUR KEY GOES HERE (never committed)
 └── .gitignore
 ```
 
@@ -89,9 +84,9 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 
 | Scenario | Behaviour |
 |---|---|
-| Missing API key | Clear warning banner in UI, never crashes |
-| Bad audio file | STT returns error string, displayed in UI |
-| Transcription failure | Error shown, processing stops gracefully |
-| Malformed LLM JSON | Caught by `json.JSONDecodeError`, shown in UI |
-| DB write error | `sqlite3.Error` caught, shown in UI |
-| Rate limit / quota | Friendly message shown, no traceback |
+| Missing API key | Warning banner in UI, never crashes |
+| Bad audio file | Error string shown, processing stops |
+| Transcription failure | Error displayed in UI |
+| Malformed LLM JSON | Caught and shown in UI |
+| DB write error | Caught and shown in UI |
+| Rate limit / timeout | Friendly message, no traceback |
