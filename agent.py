@@ -89,8 +89,23 @@ def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
             return {}, f"[ERROR] Sarvam Chat returned HTTP {response.status_code}: {err_body[:300]}"
 
         data = response.json()
-        raw = data["choices"][0]["message"]["content"] or ""
-        raw = raw.strip()
+        msg = data["choices"][0]["message"]
+
+        # sarvam-105b is a reasoning model: it may put the JSON in
+        # "content", or the JSON may only appear inside "reasoning_content"
+        # when content is null/empty.
+        raw = (msg.get("content") or "").strip()
+
+        if not raw:
+            # Try extracting JSON from the reasoning trace
+            reasoning = (msg.get("reasoning_content") or "").strip()
+            # Find the last JSON object in the reasoning text
+            json_candidates = re.findall(r'\{[^{}]*"caller_name"[^{}]*\}', reasoning)
+            if json_candidates:
+                raw = json_candidates[-1]
+
+        if not raw:
+            return {}, "[ERROR] LLM returned empty content -- try again."
 
         # Strip accidental markdown fences (model sometimes wraps in ```json)
         raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
