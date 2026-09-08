@@ -17,7 +17,7 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Create the calls table if it does not already exist."""
+    """Create the calls table if it does not already exist, and migrate columns."""
     with get_connection() as conn:
         conn.execute(
             """
@@ -28,10 +28,16 @@ def init_db() -> None:
                 callback_number  TEXT,
                 transcript       TEXT,
                 audio_filename   TEXT,
-                created_at       TEXT NOT NULL
+                created_at       TEXT NOT NULL,
+                spoken_response  TEXT
             )
             """
         )
+        # Auto-migrate older databases that don't have spoken_response column
+        try:
+            conn.execute("ALTER TABLE calls ADD COLUMN spoken_response TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -41,6 +47,7 @@ def insert_call(
     callback_number: Optional[str],
     transcript: str,
     audio_filename: str,
+    spoken_response: Optional[str] = None,
 ) -> int:
     """Insert a call record and return the new row id."""
     created_at = datetime.utcnow().isoformat(sep=" ", timespec="seconds") + " UTC"
@@ -48,10 +55,10 @@ def insert_call(
         cursor = conn.execute(
             """
             INSERT INTO calls
-                (caller_name, intent, callback_number, transcript, audio_filename, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (caller_name, intent, callback_number, transcript, audio_filename, created_at, spoken_response)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (caller_name, intent, callback_number, transcript, audio_filename, created_at),
+            (caller_name, intent, callback_number, transcript, audio_filename, created_at, spoken_response),
         )
         conn.commit()
         return cursor.lastrowid

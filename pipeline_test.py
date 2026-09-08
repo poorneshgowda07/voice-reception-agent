@@ -63,6 +63,7 @@ def run_pipeline():
             callback_number=info.get("callback_number"),
             transcript=transcript,
             audio_filename=filename,
+            spoken_response=info.get("spoken_response"),
         )
         print(f"OK (row_id={row_id})")
         print()

@@ -19,20 +19,22 @@ load_dotenv()
 CHAT_ENDPOINT = "https://api.sarvam.ai/v1/chat/completions"
 CHAT_MODEL    = "sarvam-105b"
 
-SYSTEM_PROMPT = """You are a reception-call data extraction assistant.
+SYSTEM_PROMPT = """You are the AI Voice Receptionist for the company "Blue Eye".
 
-Given a call transcript, extract EXACTLY these three fields:
+Given a call transcript, extract and generate:
   - caller_name      : The name the caller stated, or null if not mentioned.
   - intent           : A short description (<=15 words) of why they called, or null.
   - callback_number  : The phone number the caller provided, digits only (no spaces/dashes), or null.
+  - spoken_response  : A warm, professional 1-2 sentence spoken reply from "Blue Eye" addressing the caller by name (if known), acknowledging their intent, and confirming next steps.
 
 Rules:
   1. Output ONLY valid JSON -- no markdown fences, no explanation, no extra text.
-  2. Use null (JSON null, not the string "null") for any field not clearly stated.
-  3. NEVER invent or infer values not explicitly in the transcript.
+  2. Use null for caller_name or callback_number if not clearly stated.
+  3. The spoken_response must ALWAYS mention "Blue Eye" as the company name. Never mention any other company name.
+  4. NEVER invent phone numbers or caller names not explicitly in the transcript.
 
 Example output:
-{"caller_name": "Rahul", "intent": "Inquire about available courses", "callback_number": "9876543210"}"""
+{"caller_name": "Rahul", "intent": "Inquire about available courses", "callback_number": "9876543210", "spoken_response": "Hello Rahul, thank you for calling Blue Eye! We have received your inquiry regarding our available courses and will call you back at 9876543210 shortly."}"""
 
 
 def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -99,8 +101,8 @@ def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
         if not raw:
             # Try extracting JSON from the reasoning trace
             reasoning = (msg.get("reasoning_content") or "").strip()
-            # Find the last JSON object in the reasoning text
-            json_candidates = re.findall(r'\{[^{}]*"caller_name"[^{}]*\}', reasoning)
+            # Find JSON objects in the reasoning text (supporting multiline)
+            json_candidates = re.findall(r'\{[\s\S]*?"caller_name"[\s\S]*?\}', reasoning)
             if json_candidates:
                 raw = json_candidates[-1]
 
@@ -116,6 +118,7 @@ def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
             "caller_name":     parsed.get("caller_name") or None,
             "intent":          parsed.get("intent") or None,
             "callback_number": parsed.get("callback_number") or None,
+            "spoken_response": parsed.get("spoken_response") or None,
         }
 
         # Sanitize callback_number: keep digits only, regardless of how
@@ -123,6 +126,21 @@ def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
         if result["callback_number"]:
             digits_only = re.sub(r"\D", "", str(result["callback_number"]))
             result["callback_number"] = digits_only if digits_only else None
+
+        # Fallback for spoken_response if LLM omitted it
+        if not result["spoken_response"]:
+            name = result["caller_name"] or "there"
+            intent = result.get("intent") or "your inquiry"
+            if result["callback_number"]:
+                result["spoken_response"] = (
+                    f"Hello {name}, thank you for calling Blue Eye. We have logged your request regarding {intent} "
+                    f"and our team will call you back at {result['callback_number']} shortly."
+                )
+            else:
+                result["spoken_response"] = (
+                    f"Hello {name}, thank you for calling Blue Eye. We have received your message regarding {intent} "
+                    f"and our team will review your account promptly."
+                )
 
         return result, None
 
