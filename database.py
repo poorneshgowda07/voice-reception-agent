@@ -3,10 +3,12 @@ database.py — SQLite schema initialisation and CRUD helpers.
 """
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "calls.db")
+
+IST = timezone(timedelta(hours=5, minutes=30))   # India Standard Time
 
 
 def get_connection() -> sqlite3.Connection:
@@ -50,7 +52,8 @@ def insert_call(
     spoken_response: Optional[str] = None,
 ) -> int:
     """Insert a call record and return the new row id."""
-    created_at = datetime.utcnow().isoformat(sep=" ", timespec="seconds") + " UTC"
+    # Store in IST so displayed time always matches Indian local time
+    created_at = datetime.now(IST).strftime("%d-%m-%Y  %I:%M:%S %p IST")
     with get_connection() as conn:
         cursor = conn.execute(
             """
