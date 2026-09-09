@@ -95,57 +95,67 @@ def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
 
         # sarvam-105b is a reasoning model: it may put the JSON in
         # "content", or the JSON may only appear inside "reasoning_content"
-        # when content is null/empty.
         raw = (msg.get("content") or "").strip()
 
-        if not raw:
-            # Try extracting JSON from the reasoning trace
-            reasoning = (msg.get("reasoning_content") or "").strip()
-            # Find JSON objects in the reasoning text (supporting multiline)
-            json_candidates = re.findall(r'\{[\s\S]*?"caller_name"[\s\S]*?\}', reasoning)
-            if json_candidates:
-                raw = json_candidates[-1]
-
-        if not raw:
-            return {}, "[ERROR] LLM returned empty content -- try again."
-
-        # Strip accidental markdown fences (model sometimes wraps in ```json)
+        # Strip accidental markdown fences
         raw = re.sub(r"```(?:json)?", "", raw).strip().rstrip("`").strip()
 
-        parsed = json.loads(raw)
-
-        result = {
-            "caller_name":     parsed.get("caller_name") or None,
-            "intent":          parsed.get("intent") or None,
-            "callback_number": parsed.get("callback_number") or None,
-            "spoken_response": parsed.get("spoken_response") or None,
-        }
-
-        # Sanitize callback_number: keep digits only, regardless of how
-        # the LLM formatted it (e.g. "9-8-7-6-5" -> "98765")
-        if result["callback_number"]:
-            digits_only = re.sub(r"\D", "", str(result["callback_number"]))
-            result["callback_number"] = digits_only if digits_only else None
-
-        # Fallback for spoken_response if LLM omitted it
-        if not result["spoken_response"]:
-            name = result["caller_name"] or "there"
-            intent = result.get("intent") or "your inquiry"
-            if result["callback_number"]:
-                result["spoken_response"] = (
-                    f"Hello {name}, thank you for calling Blue Eye. We have logged your request regarding {intent} "
-                    f"and our team will call you back at {result['callback_number']} shortly."
+        def _build_result(parsed: dict) -> dict:
+            """Normalise a parsed dict into the standard result shape."""
+            r = {
+                "caller_name":     parsed.get("caller_name") or None,
+                "intent":          parsed.get("intent") or None,
+                "callback_number": parsed.get("callback_number") or None,
+                "spoken_response": parsed.get("spoken_response") or None,
+            }
+            if r["callback_number"]:
+                d = re.sub(r"\D", "", str(r["callback_number"]))
+                r["callback_number"] = d if d else None
+            if not r["spoken_response"]:
+                name = r["caller_name"] or "there"
+                intn = r["intent"] or "your inquiry"
+                cb   = r["callback_number"]
+                r["spoken_response"] = (
+                    f"Hello {name}, thank you for calling Blue Eye. "
+                    + (f"We will call you back at {cb} shortly." if cb
+                       else f"We have received your message regarding {intn} and will respond shortly.")
                 )
-            else:
-                result["spoken_response"] = (
-                    f"Hello {name}, thank you for calling Blue Eye. We have received your message regarding {intent} "
-                    f"and our team will review your account promptly."
-                )
+            return r
 
-        return result, None
+        try:
+            parsed = json.loads(raw)
+            return _build_result(parsed), None
 
-    except json.JSONDecodeError as exc:
-        return {}, f"[ERROR] LLM returned malformed JSON: {exc}\nRaw: {raw!r}"
+        except json.JSONDecodeError:
+            # content was truncated/malformed — try reasoning_content
+            reasoning = (msg.get("reasoning_content") or "").strip()
+            json_candidates = re.findall(r'\{[\s\S]*?"caller_name"[\s\S]*?\}', reasoning)
+            for candidate in reversed(json_candidates):
+                candidate = re.sub(r"```(?:json)?", "", candidate).strip().rstrip("`").strip()
+                try:
+                    return _build_result(json.loads(candidate)), None
+                except json.JSONDecodeError:
+                    continue
+
+            # Last resort: extract from transcript directly via regex
+            phone_match = re.search(r'\b[6-9]\d{9}\b', transcript)
+            cb_fallback = phone_match.group(0) if phone_match else None
+            name_match  = re.search(r'my name is ([A-Z][a-z]+(?: [A-Z][a-z]+)*)',
+                                    transcript, re.IGNORECASE)
+            name_fallback = name_match.group(1) if name_match else None
+            spoken_fallback = (
+                f"Hello{' ' + name_fallback if name_fallback else ''}, "
+                f"thank you for calling Blue Eye. "
+                + (f"We will call you back at {cb_fallback} shortly." if cb_fallback
+                   else "We have received your message and our team will respond shortly.")
+            )
+            return {
+                "caller_name":     name_fallback,
+                "intent":          "General inquiry",
+                "callback_number": cb_fallback,
+                "spoken_response": spoken_fallback,
+            }, None
+
     except requests.exceptions.Timeout:
         return {}, "[ERROR] Sarvam Chat request timed out (60 s)."
     except requests.exceptions.ConnectionError:
