@@ -357,49 +357,81 @@ else:
 
     st.markdown("")
 
-    for row in rows:
+    # ── Linear table header ───────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div style="display:grid;grid-template-columns:40px 150px 1fr 140px 80px 160px;
+                    gap:8px;padding:8px 12px;background:#1f6feb;color:white;
+                    border-radius:8px 8px 0 0;font-weight:700;font-size:0.85rem;">
+            <div>#</div>
+            <div>👤 Caller</div>
+            <div>📋 Intent</div>
+            <div>📱 Callback</div>
+            <div>Status</div>
+            <div>🕐 Time</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    for i, row in enumerate(rows):
         r        = dict(row)
-        name     = r.get("caller_name")     or "Unknown Caller"
-        intent   = r.get("intent")          or "General Inquiry"
-        callback = r.get("callback_number")
-        created  = r.get("created_at", "")
-        call_id  = r.get("id")
-        badge    = "📱 Callback Needed" if callback else "ℹ️ No Number"
-        label    = f"#{call_id} — {name}  |  {intent}  |  {badge}  |  {created}"
+        name     = r.get("caller_name")     or "Unknown"
+        intent   = r.get("intent")          or "—"
+        callback = r.get("callback_number") or "—"
+        created  = r.get("created_at", "—")
+        call_id  = r.get("id", "")
+        has_cb   = bool(r.get("callback_number"))
+        bg       = "#ffffff" if i % 2 == 0 else "#f6f8fa"
+        cb_badge = (
+            '<span style="background:#25D366;color:white;padding:2px 8px;'
+            'border-radius:10px;font-size:0.78rem;font-weight:600;">📱 Callback</span>'
+            if has_cb else
+            '<span style="background:#e1e4e8;color:#586069;padding:2px 8px;'
+            'border-radius:10px;font-size:0.78rem;">No Number</span>'
+        )
 
-        with st.expander(label):
-            col_a, col_b, col_c = st.columns(3)
-            col_a.markdown(f"**👤 Caller Name:** {name}")
-            col_b.markdown(f"**📋 Intent:** {intent}")
-            col_c.markdown(f"**📱 Callback:** {callback or '*(None provided)*'}")
+        st.markdown(
+            f"""
+            <div style="display:grid;grid-template-columns:40px 150px 1fr 140px 80px 160px;
+                        gap:8px;padding:10px 12px;background:{bg};
+                        border-left:3px solid #1f6feb;border-bottom:1px solid #e1e4e8;
+                        font-size:0.88rem;align-items:center;">
+                <div style="color:#586069;font-weight:600">#{call_id}</div>
+                <div style="font-weight:600">{name}</div>
+                <div style="color:#24292e">{intent}</div>
+                <div style="font-family:monospace;font-weight:600;color:#0d47a1">{callback}</div>
+                <div>{cb_badge}</div>
+                <div style="color:#586069;font-size:0.78rem">{created}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-            st.markdown(f"**📁 Audio Source:** `{r.get('audio_filename') or '—'}`")
-            st.markdown(f"**🕐 Logged At:** `{created}`")
-
-            st.markdown("**📝 Call Transcript:**")
+        # Detail expander below each row (transcript + reply + WhatsApp)
+        with st.expander(f"  Details for call #{call_id} — {name}", expanded=False):
+            st.markdown(f"**📁 Audio File:** `{r.get('audio_filename') or '—'}`")
+            st.markdown("**📝 Full Transcript:**")
             st.info(r.get("transcript") or "(Empty)")
 
             spoken_reply = r.get("spoken_response")
             if spoken_reply:
-                st.markdown("**🤖 Blue Eye Spoken Response:**")
+                st.markdown("**🤖 Blue Eye Reply:**")
                 st.success(f'"{spoken_reply}"')
 
-            # 1-click WhatsApp callback button
-            if callback:
-                clean_num = re.sub(r"\D", "", str(callback))
+            if has_cb:
+                clean_num = re.sub(r"\D", "", str(r.get("callback_number")))
                 if len(clean_num) == 10:
                     clean_num = "91" + clean_num
                 msg = (
                     f"Hello {name}, this is Blue Eye following up on your call "
                     f"regarding '{intent}'. Please let us know a convenient time to connect."
                 )
-                wa_url = (
-                    f"https://wa.me/{clean_num}?text="
-                    + urllib.parse.quote(msg)
-                )
+                wa_url = "https://wa.me/" + clean_num + "?text=" + urllib.parse.quote(msg)
                 st.markdown(
                     f'<a href="{wa_url}" target="_blank">'
-                    f'<span class="phone-btn">📲 WhatsApp Callback to {callback}</span>'
+                    f'<span class="phone-btn">📲 WhatsApp Callback to {r.get("callback_number")}</span>'
                     f'</a>',
                     unsafe_allow_html=True,
                 )
+

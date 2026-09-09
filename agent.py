@@ -37,6 +37,42 @@ Example output:
 {"caller_name": "Rahul", "intent": "Inquire about available courses", "callback_number": "9876543210", "spoken_response": "Hello Rahul, thank you for calling Blue Eye! We have received your inquiry regarding our available courses and will call you back at 9876543210 shortly."}"""
 
 
+def _extract_intent_from_text(text: str) -> str:
+    """
+    Derive a concise intent from the transcript using keyword patterns.
+    Used only when the LLM JSON is truncated and we fall back to regex extraction.
+    """
+    t = text.lower()
+    # Ordered by specificity — first match wins
+    patterns = [
+        (r'interview',                              "Calling regarding a job interview"),
+        (r'schedul.{0,10}(meeting|call|demo|visit)',"Schedule a meeting or demo"),
+        (r'product demo|demo.{0,10}product',        "Request a product demo"),
+        (r'course|training|enrol|class',            "Inquire about courses or training"),
+        (r'technical.{0,15}(issue|problem|support)','Report a technical issue'),
+        (r'software.{0,10}(crash|not work|broken)', "Report software crash or bug"),
+        (r'support|help.{0,10}(me|with|for)',       "Request customer support"),
+        (r'billing|payment|invoice|charge',         "Billing or payment inquiry"),
+        (r'cancel|refund|return',                   "Request cancellation or refund"),
+        (r'complaint|unhappy|dissatisfied',         "Lodge a complaint"),
+        (r'follow.?up',                             "Follow up on a previous inquiry"),
+        (r'appointment|book|reservation',           "Book an appointment"),
+        (r'price|cost|quote|pricing',               "Request pricing information"),
+        (r'callback|call.{0,5}back|reach.{0,10}me', "Request a callback"),
+        (r'information|enquir|inquir',              "Request information"),
+    ]
+    for pattern, label in patterns:
+        if re.search(pattern, t):
+            return label
+    # Fallback: take first meaningful sentence fragment
+    sentences = re.split(r'[.!?]', text)
+    for s in sentences:
+        s = s.strip()
+        if len(s) > 15:
+            return s[:60].strip() + ("…" if len(s) > 60 else "")
+    return "General inquiry"
+
+
 def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
     """
     Extract structured call info from a transcript via Sarvam sarvam-105b.
@@ -149,9 +185,11 @@ def extract_call_info(transcript: str) -> Tuple[Dict[str, Any], Optional[str]]:
                 + (f"We will call you back at {cb_fallback} shortly." if cb_fallback
                    else "We have received your message and our team will respond shortly.")
             )
+            # Derive a meaningful intent from key phrases in transcript
+            intent_fallback = _extract_intent_from_text(transcript)
             return {
                 "caller_name":     name_fallback,
-                "intent":          "General inquiry",
+                "intent":          intent_fallback,
                 "callback_number": cb_fallback,
                 "spoken_response": spoken_fallback,
             }, None
